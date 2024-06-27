@@ -96,14 +96,122 @@ class DefiniteIntegral
 #!csharp
 
 #r "nuget: xunit, 2.8.1"
-
+#r "nuget:ScottPlot, 5.0.35"
 using Xunit;
-
+using System.Diagnostics;
+using Microsoft.DotNet.Interactive.Formatting;
+Formatter.Register(typeof(ScottPlot.Plot), (p, w) => 
+    w.Write(((ScottPlot.Plot)p).GetImageHtml(400, 300)), HtmlFormatter.MimeType);
+Stopwatch Time = new Stopwatch();
 var X = (double x) => x;
 var SIN = (double x) => Math.Sin(x);
+double[] dataX = new double[8];
+double[] dataY = new double[8];
+for (double i=1e-1;i>1e-6;i=i/10)
+{
+Time.Start();
+Assert.Equal(0, DefiniteIntegral.Solve(-100, 100, SIN, i, 8), 1e-4);
+Time.Stop();
+Console.WriteLine($"Затрачено времени: {Time.Elapsed} Размер шага: {i}");
+Time.Reset();
+}
+Console.WriteLine("Оптимальным наименьшим шагом выбран шаг: 1e-5. Выполняется меньше секунды и значительно быстрее чем с шагом: 1e-6");
+int BestThread;
+double MinTime = double.MaxValue;
+for (int j=2;j<10;j++)
+{
+    double Totaltime = 0;
+    for (int k=0;k<7;k++)
+    {
 
-Assert.Equal(0, DefiniteIntegral.Solve(-1, 1, X, 1e-4, 2), 1e-4);
+    
+    Time.Start();
+    Assert.Equal(0, DefiniteIntegral.Solve(-100, 100, SIN, 1e-5, j), 1e-4);
+    Time.Stop();
+    Totaltime += Time.Elapsed.TotalMilliseconds;
+    Time.Reset();
+    
+    }
+    dataX[j-2]=Totaltime/7;
+    dataY[j-2]=j;
+    if ((Totaltime/7) < MinTime)
+    {
+        MinTime = Totaltime/7;
+        BestThread = j;
+    }
+}
+Console.WriteLine($"Минимальное время: {MinTime} мс, количество потоков: {BestThread}");
+ScottPlot.Plot plt = new();
+plt.Add.Scatter(dataX, dataY);
+plt
 
-Assert.Equal(0, DefiniteIntegral.Solve(-1, 1, SIN, 1e-5, 8), 1e-4);
+#!csharp
 
-Assert.Equal(50, DefiniteIntegral.Solve(0, 10, X, 1e-6, 8), 1e-5);
+using System.Threading;
+//
+// Вычисление определенного интеграла
+//
+class DefiniteIntegralOneThread
+{
+    //
+    // a, b - границы отрезка, на котором происходит вычисление опредленного интеграла
+    // function - функция, для которой вычисляется определнный интеграл
+    // step - размер одного шага разбиения
+    // threadsNumber - число потоков, которые используются для вычислений
+    //
+    public static double Solve(double a, double b, Func<double, double> function, double step)
+    {
+        // отсюда надо начинать реализацию задачи
+        double sum = 0;
+        int count = Convert.ToInt32((b - a)/step);
+        for (int i=0;i<count;i++)
+        {
+            double x1=a+i*step;
+            double x2=x1+step;
+            
+            
+            sum += (function(x1)+function(x2))*step/2;
+            
+        }
+        
+        return sum;
+    }
+}
+
+#!csharp
+
+#r "nuget: xunit, 2.8.1"
+#r "nuget:ScottPlot, 5.0.35"
+using Xunit;
+using System.Diagnostics;
+using Microsoft.DotNet.Interactive.Formatting;
+Formatter.Register(typeof(ScottPlot.Plot), (p, w) => 
+    w.Write(((ScottPlot.Plot)p).GetImageHtml(400, 300)), HtmlFormatter.MimeType);
+Stopwatch Time = new Stopwatch();
+var X = (double x) => x;
+var SIN = (double x) => Math.Sin(x);
+double TotalTimeOneThread = 0;
+for (int i=0;i<7;i++)
+{
+Time.Start();
+Assert.Equal(0, DefiniteIntegralOneThread.Solve(-100, 100, SIN, 1e-5), 1e-4);
+Time.Stop();
+TotalTimeOneThread += Time.Elapsed.TotalMilliseconds;
+Time.Reset();
+}
+Console.WriteLine(TotalTimeOneThread/7);
+Console.WriteLine($"Сравнение многопоточного варианта с однопоточным\nВремя многопотока: {MinTime} мс\nВремя однопотока: {TotalTimeOneThread/7} мс\nРазница в миллисекундах: {Math.Abs(TotalTimeOneThread/7-MinTime)}\nРазница в процентах: {(Math.Abs(TotalTimeOneThread/7-MinTime)/MinTime*100)}%");
+
+#!markdown
+
+# Summary
+
+**Размер шага:** 1e-5 (шаг, определяющий количество отрезков)
+
+**Оптимальное количество потоков:** 7-8 (количество потоков, при котором программа выполняется за минимальное время)
+
+**Скорость оптимальной многопоточной версии в сравнении с однопоточной**
+
+1. Время выполнения многопоточной версии: от 110 до 125 миллисекунд
+2. Время выполнения однопоточной версии: около 475 миллисекунд
+3. Разница в процентах: около 310%
