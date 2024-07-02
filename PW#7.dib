@@ -94,6 +94,7 @@ public class HardStopCommand : ICommand
         {
             Console.WriteLine("Исполнение hard завершения потока");
             targetThread.HStop();
+            targetThread.Stop();
         }
         else
         {
@@ -135,6 +136,7 @@ public class SomeCommand : ICommand
 
 ServerThread serverThread = new ServerThread();
 
+serverThread.AddCommand(new SomeCommand());
 serverThread.AddCommand(new SomeCommand());
 serverThread.AddCommand(new SoftStopCommand(serverThread));
 serverThread.AddCommand(new SomeCommand());
