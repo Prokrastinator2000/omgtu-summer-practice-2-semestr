@@ -90,7 +90,7 @@ public class HardStopCommand : ICommand
 
     public void Execute()
     {
-        if (Thread.CurrentThread == targetThread.GetThread())//проверка выполнения команды в данном потоке
+        if (Thread.CurrentThread == targetThread.GetThread())//проверка выполнения команды в нужном потоке
         {
             Console.WriteLine("Исполнение hard завершения потока");
             targetThread.HStop();
@@ -113,7 +113,7 @@ public class SoftStopCommand : ICommand
 
     public void Execute()
     {
-        if (Thread.CurrentThread == targetThread.GetThread())//проверка выполнения команды в данном потоке
+        if (Thread.CurrentThread == targetThread.GetThread())//проверка выполнения команды в нужном потоке
         {
             Console.WriteLine("Исполнение soft завершения потока");
             targetThread.Stop();
