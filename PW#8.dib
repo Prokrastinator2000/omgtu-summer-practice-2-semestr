@@ -35,12 +35,184 @@
 
 #!csharp
 
+using System;
+using System.Collections.Concurrent;
+using System.Threading;
+
 public interface IScheduler
 {
-    bool HasCommand()
+    bool HasCommand();
     ICommand Select();
     void Add(ICommand cmd);
 }
+
+public interface ICommand
+{
+    void Execute(ServerThread serverThread);
+    int Count { get; set; }
+}
+
+public class Scheduler : IScheduler
+{
+    ConcurrentQueue<ICommand> commandQueue = new ConcurrentQueue<ICommand>();
+
+    public bool HasCommand()
+    {
+        return !commandQueue.IsEmpty;
+    }
+
+    public ICommand Select()
+    {
+        if (commandQueue.TryDequeue(out ICommand command) && command.Count > 0)
+        {
+            return command;
+        }
+        return null;
+    }
+
+    public void Add(ICommand cmd)
+    {
+        commandQueue.Enqueue(cmd);
+    }
+}
+
+public class ServerThread
+{
+    IScheduler scheduler;
+    Thread thread;
+    bool running = true; //для soft завершения
+    bool hardStop = false; //для hard завершения
+
+    public ServerThread(IScheduler scheduler)
+    {
+        this.scheduler = scheduler;
+        thread = new Thread(Run); //инициализация потока
+        thread.Start();
+    }
+
+    public void Run()
+    {
+        while (running || (scheduler.HasCommand() && !hardStop))
+        {
+            ICommand command = scheduler.Select();
+            if (command != null)
+            {
+                try
+                {
+                    command.Execute(this);
+                    command.Count--; // Уменьшаем Count после выполнения
+                    if (command.Count > 0)
+                    {
+                        scheduler.Add(command);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Исключение: {ex.Message}");
+                }
+            }
+            else
+            {
+                Thread.Sleep(10);
+            }
+        }
+        Console.WriteLine("Поток остановлен.");
+    }
+
+    public void Stop() //метод для soft завершения
+    {
+        running = false;
+    }
+
+    public void HardStop() //метод для hard завершения
+    {
+        hardStop = true;
+    }
+
+    public Thread GetThread() => thread; //возвращает поток
+}
+
+public class HardStopCommand : ICommand
+{
+    ServerThread targetThread;
+    public int Count { get; set; } = 1;
+
+    public HardStopCommand(ServerThread targetThread) //конструктор
+    {
+        this.targetThread = targetThread;
+    }
+
+    public void Execute(ServerThread serverThread)
+    {
+        if (Thread.CurrentThread == targetThread.GetThread()) //проверка выполнения команды в нужном потоке
+        {
+            Console.WriteLine("Исполнение hard завершения потока");
+            targetThread.HardStop();
+            targetThread.Stop();
+        }
+        else
+        {
+            throw new InvalidOperationException("Исполнение hard завершения потока может быть произведено только в данном потоке.");
+        }
+    }
+}
+
+public class SoftStopCommand : ICommand
+{
+    ServerThread targetThread;
+    public int Count { get; set; } = 1;
+
+    public SoftStopCommand(ServerThread targetThread)
+    {
+        this.targetThread = targetThread;
+    }
+
+    public void Execute(ServerThread serverThread)
+    {
+        if (Thread.CurrentThread == targetThread.GetThread()) //проверка выполнения команды в нужном потоке
+        {
+            Console.WriteLine("Исполнение soft завершения потока");
+            targetThread.Stop();
+        }
+        else
+        {
+            throw new InvalidOperationException("Исполнение soft завершения потока может быть произведено только в данном потоке.");
+        }
+    }
+}
+
+public class SomeCommand : ICommand
+{
+    public int Count { get; set; } = 1;
+
+    public void Execute(ServerThread serverThread)
+    {
+        Console.WriteLine("Исполнение некоторой команды");
+        
+    }
+}
+
+public class LongCommand : ICommand
+{
+    public int Count { get; set; } = 3;
+
+    public void Execute(ServerThread serverThread)
+    {
+        Console.WriteLine("Исполнение некоторой длительной команды, count = " + Count);
+    }
+}
+
+
+        IScheduler scheduler = new Scheduler();
+        ServerThread serverThread = new ServerThread(scheduler);
+
+        scheduler.Add(new SomeCommand());
+        scheduler.Add(new SoftStopCommand(serverThread));
+        scheduler.Add(new SomeCommand());
+        scheduler.Add(new LongCommand());
+        scheduler.Add(new HardStopCommand(serverThread));
+        scheduler.Add(new SomeCommand());
+        serverThread.GetThread().Join();
 
 #!markdown
 
