@@ -37,10 +37,166 @@
 Для этого следует использовать условные события, которые позволят убедиться, что оба потока запустились и готовы читать и писать объекты и только потом запускать таймер.
 2. Для итогового вывода сравнивать усредненные значения.
 
-#!markdown
+#!csharp
 
 // здесь писать код
+#r "nuget:ScottPlot, 5.0.35"
+using System.Threading;
+using System.Diagnostics;
+using System.Collections.Concurrent;
+using Microsoft.DotNet.Interactive.Formatting;
+Formatter.Register(typeof(ScottPlot.Plot), (p, w) => 
+    w.Write(((ScottPlot.Plot)p).GetImageHtml(400, 300)), HtmlFormatter.MimeType);
+int NumberOfObjects = 1000000;
+int[] data = new int[NumberOfObjects];
+ScottPlot.Plot plt1 = new();
+ScottPlot.Plot plt2 = new();
+ScottPlot.Plot plt3 = new();
+for (int i = 0; i < NumberOfObjects; i++)
+{
+    data[i] = i;
+}
+
+List<double> blockingCollectionTimes = new List<double>();
+List<double> concurrentQueueTimes = new List<double>();
+List<double> simpleQueueTimes = new List<double>();
+
+for (int test = 0; test < 10; test++)
+{
+    // BlockingCollection
+    var BlockingQueue = new BlockingCollection<int>(2);
+    Stopwatch TimerForBlocking = new Stopwatch();
+    ManualResetEventSlim startEvent = new ManualResetEventSlim();
+
+    Thread WriteThreadBlockingCollection = new Thread(() =>
+    {
+        startEvent.Wait();
+        for (int i = 0; i < NumberOfObjects; i++)
+        {
+            BlockingQueue.Add(data[i]);
+        }
+        BlockingQueue.CompleteAdding();
+    });
+
+    Thread ReadThreadBlockingCollection = new Thread(() =>
+    {
+        startEvent.Wait();
+        for (int i = 0; i < NumberOfObjects; i++)
+        {
+            BlockingQueue.Take();
+        }
+    });
+    WriteThreadBlockingCollection.Start();
+    ReadThreadBlockingCollection.Start();
+    TimerForBlocking.Start();
+    startEvent.Set();
+    WriteThreadBlockingCollection.Join();
+    ReadThreadBlockingCollection.Join();
+    TimerForBlocking.Stop();
+    blockingCollectionTimes.Add(TimerForBlocking.Elapsed.TotalMilliseconds);
+
+    // ConcurrentQueue
+    var concurrentQueue = new ConcurrentQueue<int>();
+    Stopwatch TimerForConcurrent = new Stopwatch();
+    startEvent.Reset();
+
+    Thread WriteThreadConcurrentQueue = new Thread(() =>
+    {
+        startEvent.Wait();
+        for (int i = 0; i < NumberOfObjects; i++)
+        {
+            concurrentQueue.Enqueue(data[i]);
+        }
+    });
+
+    Thread ReadThreadConcurrentQueue = new Thread(() =>
+    {
+        startEvent.Wait();
+        int item;
+        for (int i = 0; i < NumberOfObjects; i++)
+        {
+            while (!concurrentQueue.TryDequeue(out item)) { }
+            // Чтение
+        }
+    });
+    WriteThreadConcurrentQueue.Start();
+    ReadThreadConcurrentQueue.Start();
+    TimerForConcurrent.Start();
+    startEvent.Set();
+    WriteThreadConcurrentQueue.Join();
+    ReadThreadConcurrentQueue.Join();
+    TimerForConcurrent.Stop();
+    concurrentQueueTimes.Add(TimerForConcurrent.Elapsed.TotalMilliseconds);
+
+    // Simple Queue
+    var simpleQueue = new Queue<int>();
+    Stopwatch TimerForSimpleQueue = new Stopwatch();
+
+    
+    TimerForSimpleQueue.Start();
+    for (int i = 0; i < NumberOfObjects; i++)
+    {
+        simpleQueue.Enqueue(data[i]);
+    }
+    TimerForSimpleQueue.Stop();
+    double enqueueTime = TimerForSimpleQueue.Elapsed.TotalMilliseconds;
+
+    
+    TimerForSimpleQueue.Restart();
+    for (int i = 0; i < NumberOfObjects; i++)
+    {
+        var item = simpleQueue.Dequeue();
+        // Чтение
+    }
+    TimerForSimpleQueue.Stop();
+    double dequeueTime = TimerForSimpleQueue.Elapsed.TotalMilliseconds;
+
+    simpleQueueTimes.Add(enqueueTime + dequeueTime);
+}
+
+// Печать результатов
+void PrintResults(string name, List<double> times)
+{
+    Console.WriteLine($"{name} Время:");
+    foreach (var time in times)
+    {
+        Console.WriteLine($"{time} мс");
+    }
+    Console.WriteLine();
+}
+PrintResults("BlockingCollection", blockingCollectionTimes);
+PrintResults("ConcurrentQueue", concurrentQueueTimes);
+PrintResults("SimpleQueue", simpleQueueTimes);
+
+double averageBlockingCollectionTime = blockingCollectionTimes.Average();
+double averageConcurrentQueueTime = concurrentQueueTimes.Average();
+double averageSimpleQueueTime = simpleQueueTimes.Average();
+
+Console.WriteLine($"BlockingCollection среднее время: {averageBlockingCollectionTime} мс");
+Console.WriteLine($"ConcurrentQueue среднее время: {averageConcurrentQueueTime} мс");
+Console.WriteLine($"SimpleQueue среднее время: {averageSimpleQueueTime} мс");
+
+
+
+// Построение графиков
+double[] dataX = Enumerable.Range(1, 10).Select(i => (double)i).ToArray();
+plt1.Add.Scatter(dataX, blockingCollectionTimes.ToArray());
+plt2.Add.Scatter(dataX, concurrentQueueTimes.ToArray());
+plt3.Add.Scatter(dataX, simpleQueueTimes.ToArray());
+plt1
+
+#!csharp
+
+plt2
+
+#!csharp
+
+plt3
 
 #!markdown
 
 ## Вывод
+
+ConcurrentQueue - самая быстрая из потоко-безопасных очередей.
+
+ConcurrentQueue на 10% быстрее обычной очереди.
