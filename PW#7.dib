@@ -17,10 +17,134 @@
 
 #!csharp
 
+using System.Collections.Concurrent;
+using System.Threading;
+
 public interface ICommand
 {
     void Execute();
 }
+
+public class ServerThread
+{
+    ConcurrentQueue<ICommand> commandQueue = new ConcurrentQueue<ICommand>();
+    Thread thread;
+    bool running = true;//для soft завершения
+    bool HardStop = false;//для hard завершения
+
+    public ServerThread()
+    {
+        thread = new Thread(Run);//инициализация потока
+        thread.Start();
+    }
+
+    public void Run()
+    {
+        while (running || (!commandQueue.IsEmpty && !HardStop))
+        {
+            if (commandQueue.TryDequeue(out ICommand command))
+            {
+                try
+                {
+                    command.Execute();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Исключение: {ex.Message}");
+                }
+            }
+            else
+            {
+                Thread.Sleep(10);
+            }
+        }
+        Console.WriteLine("Поток остановлен.");
+    }
+
+    public void AddCommand(ICommand command)//добавление команды в очередь
+    {
+        commandQueue.Enqueue(command);
+    }
+
+    public void Stop()//метод для soft завершения
+    {
+        running = false;
+    }
+    public void HStop()//метод для hard завершения
+    {
+        HardStop = true;
+    }
+
+    public Thread GetThread() => thread;//возвращает поток
+}
+
+public class HardStopCommand : ICommand
+{
+    ServerThread targetThread;
+
+    public HardStopCommand(ServerThread targetThread)//конструктор
+    {
+        this.targetThread = targetThread;
+        
+    }
+
+    public void Execute()
+    {
+        if (Thread.CurrentThread == targetThread.GetThread())//проверка выполнения команды в нужном потоке
+        {
+            Console.WriteLine("Исполнение hard завершения потока");
+            targetThread.HStop();
+            targetThread.Stop();
+        }
+        else
+        {
+            throw new InvalidOperationException("Исполнение hard завершения потока может быть произведено только в данном потоке.");
+        }
+    }
+}
+
+public class SoftStopCommand : ICommand
+{
+    ServerThread targetThread;
+
+    public SoftStopCommand(ServerThread targetThread)
+    {
+        this.targetThread = targetThread;
+    }
+
+    public void Execute()
+    {
+        if (Thread.CurrentThread == targetThread.GetThread())//проверка выполнения команды в нужном потоке
+        {
+            Console.WriteLine("Исполнение soft завершения потока");
+            targetThread.Stop();
+        }
+        else
+        {
+            throw new InvalidOperationException("Исполнение hard завершения потока может быть произведено только в данном потоке.");
+        }
+    }
+}
+
+public class SomeCommand : ICommand
+{
+    public void Execute()
+    {
+        Console.WriteLine("Исполнение некоторой команды");
+    }
+}
+
+ServerThread serverThread = new ServerThread();
+
+serverThread.AddCommand(new SomeCommand());
+serverThread.AddCommand(new SomeCommand());
+serverThread.AddCommand(new SoftStopCommand(serverThread));
+serverThread.AddCommand(new SomeCommand());
+serverThread.AddCommand(new HardStopCommand(serverThread));
+serverThread.AddCommand(new SomeCommand());
+
+serverThread.GetThread().Join();
+        
 
 #!markdown
 
